@@ -89,3 +89,17 @@ def quat2euler(quats, degrees=False, P=1):
         euler_angles = np.rad2deg(euler_angles)
 
     return euler_angles
+
+
+def format_tensor33(tensor, fmt='', sym=False):
+    'Also formats non-masked array.'
+    str_out = ""
+    for i, row in enumerate(tensor):
+        start = i if sym else 0
+        for x in row[start:]:
+            if isinstance(x, np.ma.core.MaskedConstant):
+                x = 0
+            str_out += f" {x:{fmt}}"
+        str_out += f"\n"
+
+    return str_out
