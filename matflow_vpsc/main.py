@@ -1,6 +1,8 @@
 '`matflow_vpsc.main.py`'
 
+from os import defpath
 from pathlib import Path
+from copy import copy
 
 import numpy as np
 
@@ -14,34 +16,12 @@ from matflow_vpsc import (
     func_mapper,
     software_versions,
 )
-from matflow_vpsc.utils import quat2euler
+from matflow_vpsc.utils import quat2euler, format_tensor33
 
-# {phase_name}.tex
-# {phase_name}.sx
-# part_i.proc
-# vpsc7.in
 
 @input_mapper('vpsc7.in', 'simulate_orientations_loading', 'self_consistent')
-def write_vpsc_in(path, loadcase):
-    phases = {
-        'ti-hex': {
-            'fraction': 1.0,
-            'grain_shape_control': 0,
-            'fragmentation_control': 0,
-            'critical_aspect_ratio': 25,
-            'init_ellipsoid_ratios': [1.0, 1.0, 1.0],
-            'init_ellipsoid_ori': [0.0, 0.0, 0.0],
-        },
-        # 'ti-cub': {
-        #     'fraction': 0.1,
-        #     'grain_shape_control': 0,
-        #     'fragmentation_control': 0,
-        #     'critical_aspect_ratio': 25,
-        #     'init_ellipsoid_ratios': [1.0, 1.0, 1.0],
-        #     'init_ellipsoid_ori': [0.0, 0.0, 0.0],
-        # }
-    }
-    numerics = {
+def write_vpsc_in(path, control, phases, load_case, numerics):
+    numerics_defaults = {
         'errs': 0.001,
         'errd': 0.001,
         'errm': 0.001,
@@ -58,7 +38,7 @@ def write_vpsc_in(path, loadcase):
 
         'ibcinv': 1,
     }
-    control = {
+    control_defaults = {
         'irecover': 0,
         'isave': 0,
         'icubcomp': 0,
@@ -73,6 +53,27 @@ def write_vpsc_in(path, loadcase):
         'nneigh': 0,
         'iflu': 0,
     }
+    phase_defaults = {
+        'fraction': 1.0,
+        'grain_shape_control': 0,
+        'fragmentation_control': 0,
+        'critical_aspect_ratio': 25,
+        'init_ellipsoid_ratios': [1.0, 1.0, 1.0],
+        'init_ellipsoid_ori': [0.0, 0.0, 0.0],
+    }
+
+    if numerics is not None:
+        numerics_defaults.update(numerics)
+    numerics = numerics_defaults
+    if control is not None:
+        control_defaults.update(control)
+    control = control_defaults
+    phases_defaults = {}
+    for name, phase in phases.items():
+        phase_d = copy(phase_defaults)
+        phase_d.update(phase)
+        phases_defaults[name] = phase_d
+    phases = phases_defaults
 
     phase_fractions = [phase['fraction'] for phase in phases.values()]
     assert(sum(phase_fractions) == 1.0)
@@ -85,183 +86,129 @@ def write_vpsc_in(path, loadcase):
 
         for name, phase in phases.items():
 
-            f.write('# Info on phase `{name}`\n')
-            f.write(f'{phase['grain_shape_control']} '
-                    f'{phase['fragmentation_control']} '
-                    f'{phase['critical_aspect_ratio']}\n')
+
+            f.write(f'# Info on phase `{name}`\n')
+            f.write(f'{phase["grain_shape_control"]} '
+                    f'{phase["fragmentation_control"]} '
+                    f'{phase["critical_aspect_ratio"]}\n')
             f.write(' '.join(str(x) for x in phase['init_ellipsoid_ratios']) + '\n')
             f.write(' '.join(str(x) for x in phase['init_ellipsoid_ori']) + '\n')
 
             f.write('blank\n')
-            f.write('{name}.tex')
+            f.write(f'{name}.tex\n')
             f.write('blank\n')
-            f.write('{name}.sx')
+            f.write(f'{name}.sx\n')
             f.write('blank\n')
             f.write('blank\n')
 
         f.write('# Convergence paramenters\n')
-        f.write(f'{numerics['errs']} {numerics['errd']} {numerics['errm']} '
-                f'{numerics['errso']}\n')
-        f.write(f'{numerics['itmaxext']} {numerics['itmaxint']} '
-                f'{numerics['itmaxso']}\n')
-        f.write(f'{numerics['irsvar']} {numerics['jrsini']} '
-                f'{numerics['jrsfin']} {numerics['jrstep']}\n')
-        
+        f.write(f'{numerics["errs"]} {numerics["errd"]} {numerics["errm"]} '
+                f'{numerics["errso"]}\n')
+        f.write(f'{numerics["itmaxext"]} {numerics["itmaxint"]} '
+                f'{numerics["itmaxso"]}\n')
+        f.write(f'{numerics["irsvar"]} {numerics["jrsini"]} '
+                f'{numerics["jrsfin"]} {numerics["jrstep"]}\n')
+        f.write(f'{numerics["ibcinv"]}\n')
+
         f.write('# IO paramenters\n')
-        f.write(f'{numerics['irecover']}\n')
-        f.write(f'{numerics['isave']}\n')
-        f.write(f'{numerics['icubcomp']}\n')
-        f.write(f'{numerics['nwrite']}\n')
+        f.write(f'{control["irecover"]}\n')
+        f.write(f'{control["isave"]}\n')
+        f.write(f'{control["icubcomp"]}\n')
+        f.write(f'{control["nwrite"]}\n')
 
         f.write('# Model paramenters\n')
-        f.write(f'{numerics['ihardlaw']}\n')
-        f.write(f'{numerics['iratesens']}\n')
-        f.write(f'{numerics['interaction']}\n')
-        f.write(f'{numerics['iupdate_ori']} {numerics['iupdate_shape']} '
-                f'{numerics['iupdate_hard']}\n')
-        f.write(f'{numerics['nneigh']}\n')
-        f.write(f'{numerics['iflu']}\n')
+        f.write(f'{control["ihardlaw"]}\n')
+        f.write(f'{control["iratesens"]}\n')
+        f.write(f'{control["interaction"]}\n')
+        f.write(f'{control["iupdate_ori"]} {control["iupdate_shape"]} '
+                f'{control["iupdate_hard"]}\n')
+        f.write(f'{control["nneigh"]}\n')
+        f.write(f'{control["iflu"]}\n')
 
         f.write('# Process paramenters\n')
-        f.write(f'{len(loadcase)}\n')
+        f.write(f'{len(load_case)}\n')
         f.write('blank\n')
-        for i, range(len(loadcase)):
-            f.write(f'0\n')
+        for i in range(len(load_case)):
+            f.write('0\n')
             f.write(f'part_{i+1}.proc\n')
 
 
-@input_mapper('FILECRYS', 'simulate_orientations_loading', 'self_consistent')
-def write_vpsc_filecrys(path):
-    phases = {
-        'ti-hex': {
-            'lattice': 'hexagonal',
-            'c/a': 1.624,
-            'slip_modes': [{
-                'name': 'basal',
-                'n': 20,
-                'tau_0': 3.,
-                'tau_1': 1.,
-                'theta_0': 5000.,
-                'theta_1': 25.,
-                'hpfac': 0.,
-                'gndfac': 0.,
-                'h_latent': [4., 4., 2., 4.],
-                'slip_planes': [
-                    [0, 0, 0, 1],
-                    [0, 0, 0, 1],
-                    [0, 0, 0, 1],
-                ],
-                'slip_dirs': [
-                    [ 2, -1, -1, 0],
-                    [-1,  2, -1, 0],
-                    [-1, -1,  2, 0],
-                ],
-            }, {
-                'name': 'prismatic',
-                'n': 20,
-                'tau_0': 14.,
-                'tau_1': 40.,
-                'theta_0': 590.,
-                'theta_1': 50.,
-                'hpfac': 0.,
-                'gndfac': 0.,
-                'h_latent': [4., 4., 2., 4.],
-                'slip_planes': [
-                    [ 1,  0, -1, 0],
-                    [ 0, -1,  1, 0],
-                    [-1,  1,  0, 0],
-                ],
-                'slip_dirs': [
-                    [-1,  2, -1, 0],
-                    [ 2, -1, -1, 0],
-                    [-1, -1,  2, 0],
-                ],
-            }, {
-                'name': 'pyramidal<c+a>',
-                'n': 20,
-                'tau_0': 44.,
-                'tau_1': 100.,
-                'theta_0': 5000.,
-                'theta_1': 0.,
-                'hpfac': 0.,
-                'gndfac': 0.,
-                'h_latent': [4., 4., 2., 4.],
-                'slip_planes': [
-                    [ 1,  0, -1, 1],
-                    [ 1,  0, -1, 1],
-                    [ 0, -1,  1, 1],
-                    [ 0, -1,  1, 1],
-                    [-1,  1,  0, 1],
-                    [-1,  1,  0, 1],
-                    [-1,  0,  1, 1],
-                    [-1,  0,  1, 1],
-                    [ 0,  1, -1, 1],
-                    [ 0,  1, -1, 1],
-                    [ 1, -1,  0, 1],
-                    [ 1, -1,  0, 1],
-                ],
-                'slip_dirs': [
-                    [-1, -1,  2, 3],
-                    [-2,  1,  1, 3],
-                    [ 1,  1, -2, 3],
-                    [-1,  2, -1, 3],
-                    [ 2, -1, -1, 3],
-                    [ 1, -2,  1, 3],
-                    [ 2, -1, -1, 3],
-                    [ 1,  1, -2, 3],
-                    [-1, -1,  2, 3],
-                    [ 1, -2,  1, 3],
-                    [-2,  1,  1, 3],
-                    [-1,  2, -1, 3],
-                ],
-            }],
-            'twin_modes': [{
-                'name': 'tensile',
-                'n': 20,
+@input_mapper('phase_name.sx', 'simulate_orientations_loading', 'self_consistent')
+def write_vpsc_filecrys(path, phases):
+    path = Path(path)
 
-                'twsh': 0.13,
-                'isectw': 0,
-                'thres_1': 0.81,
-                'thres_2': 0.,
+    for name, phase in phases.items():
+        if phase['lattice'].lower() == 'hexagonal':
+            lattice_params = f'1. 1. {phase["c/a"]} 90. 90. 120.\n'
 
-                'tau_0': 44.,
-                'tau_1': 100.,
-                'theta_0': 5000.,
-                'theta_1': 0.,
-                'hpfac': 0.,
-                'gndfac': 0.,
-                'h_latent': [4., 4., 2., 4.],
-                'slip_planes': [
-                    [ 1,  0, -1, 2],
-                    [ 0,  1, -1, 2],
-                    [-1,  1,  0, 2],
-                    [-1,  0,  1, 2],
-                    [ 0, -1,  1, 2],
-                    [ 1, -1,  0, 2],
-                ],
-                'slip_dirs': [
-                    [-1,  0,  1, 1],
-                    [ 0, -1,  1, 1],
-                    [ 1, -1,  0, 1],
-                    [ 1,  0, -1, 1],
-                    [ 0,  1, -1, 1],
-                    [-1,  1,  0, 1],
-                ],
-            }],
-        },
-        # 'ti-cub': {
-        #     'fraction': 0.1,
-        #     'grain_shape_control': 0,
-        #     'fragmentation_control': 0,
-        #     'critical_aspect_ratio': 25,
-        #     'init_ellipsoid_ratios': [1.0, 1.0, 1.0],
-        #     'init_ellipsoid_ori': [0.0, 0.0, 0.0],
-        # }
-    }
+            c_pars = phase['elastic_stiffness']
+            c_pars['Z'] = 0.0
+            c_pars['C_66'] = (c_pars['C_11'] - c_pars['C_12']) / 2.
+            stiffness = '{C_11} {C_12} {C_13} {Z} {Z} {Z}\n'.format(**c_pars)
+            stiffness += '{C_12} {C_11} {C_13} {Z} {Z} {Z}\n'.format(**c_pars)
+            stiffness += '{C_13} {C_13} {C_33} {Z} {Z} {Z}\n'.format(**c_pars)
+            stiffness += '{Z} {Z} {Z} {C_44} {Z} {Z}\n'.format(**c_pars)
+            stiffness += '{Z} {Z} {Z} {Z} {C_44} {Z}\n'.format(**c_pars)
+            stiffness += '{Z} {Z} {Z} {Z} {Z} {C_66}\n'.format(**c_pars)
+
+        elif phase['lattice'].lower() == 'cubic':
+            lattice_params = '1. 1. 1. 90. 90. 90.\n'
+
+            c_pars = phase['elastic_stiffness']
+            c_pars['Z'] = 0.0
+            stiffness = '{C_11} {C_12} {C_12} {Z} {Z} {Z}\n'.format(**c_pars)
+            stiffness += '{C_12} {C_11} {C_12} {Z} {Z} {Z}\n'.format(**c_pars)
+            stiffness += '{C_12} {C_12} {C_11} {Z} {Z} {Z}\n'.format(**c_pars)
+            stiffness += '{Z} {Z} {Z} {C_44} {Z} {Z}\n'.format(**c_pars)
+            stiffness += '{Z} {Z} {Z} {Z} {C_44} {Z}\n'.format(**c_pars)
+            stiffness += '{Z} {Z} {Z} {Z} {Z} {C_44}\n'.format(**c_pars)
+
+        else:
+            msg = ('`lattice` must be `cubic`, `hexagonal`.')
+            raise ValueError(msg)
+
+        slip_modes = phase.get('slip_modes', [])
+        twin_modes = phase.get('twin_modes', [])
+        num_sl = len(slip_modes)
+        num_tw = len(twin_modes)
+        num_modes = num_sl + num_tw
+
+        path_phase = path.parent / f'{name}.sx'
+        with path_phase.open(mode='w') as f:
+            f.write(f'# Material: {name}\n')
+            f.write(f'{phase["lattice"].upper()}\n')
+            f.write(lattice_params)
+            f.write('# Elastic stiffness\n')
+            f.write(stiffness)
+            f.write('# Thermal expansion coefficients (ignored)\n')
+            f.write('0.0 0.0 0.0 0.0 0.0 0.0\n')
+            f.write('# Slip and twinning modes\n')
+            f.write(f'{num_modes}\n')
+            f.write(f'{num_modes}\n')
+            f.write(' '.join(str(i) for i in range(1, num_modes + 1)) + '\n')
+            for i, mode in enumerate(slip_modes + twin_modes):
+                tw = i >= num_sl
+                num_sys = len(mode['planes'])
+                assert len(mode['planes']) == len(mode['directions'])
+                f.write(f'{mode["name"]}\n')
+                f.write(f'{i+1} {num_sys} {mode["n"]}')
+                if tw:
+                    f.write(' 0\n')
+                    f.write(f'{mode["twsh"]} {mode["isectw"]} '
+                            f'{mode["thres_1"]} {mode["thres_2"]}\n')
+                else:
+                    f.write(' 1\n')
+                    f.write('0. 0 0. 0.\n')
+                f.write(f'{mode["tau_0"]} {mode["tau_1"]} '
+                        f'{mode["theta_0"]} {mode["theta_1"]} '
+                        f'{mode["hpfac"]} {mode["gndfac"]}\n')
+                f.write(' '.join(str(x) for x in mode['h_latent']) + '\n')
+                for pl, dr in zip(mode['planes'], mode['directions']):
+                    f.write(' '.join(str(x) for x in pl + dr) + '\n')
 
 
-@input_mapper('FILETEXT', 'simulate_orientations_loading', 'self_consistent')
-def write_vpsc_filetext(path, orientations):
+@input_mapper('phase_name.tex', 'simulate_orientations_loading', 'self_consistent')
+def write_vpsc_filetext(path, orientations, phases):
     # Convert orientations and get size
     orientations = validate_orientations(orientations)
     euler_angles = quat2euler(orientations['quaternions'], degrees=True,
@@ -274,25 +221,29 @@ def write_vpsc_filetext(path, orientations):
     euler_angles = np.hstack((euler_angles, np.ones((num_oris, 1))))
 
     path = Path(path)
-    with path.open(mode='w') as f:
+    for name, phase in phases.items():
+        path_tex = path.parent / f'{name}.tex'
+        break
+
+    with path_tex.open(mode='w') as f:
         f.write('blank\nblank\nblank\n')
         f.write(f'B   {num_oris}\n')
 
         np.savetxt(f, euler_angles, fmt='%.2f')
 
 
-@input_mapper('FILEPROC', 'simulate_orientations_loading', 'self_consistent')
+@input_mapper('part_i.proc', 'simulate_orientations_loading', 'self_consistent')
 def write_vpsc_fileproc(path, load_case):
     path = Path(path)
-    
+
     for i, load_part in enumerate(load_case):
 
         vel_grad = load_part.get('vel_grad')
         stress = load_part.get('stress')
-        # rot = load_case.get('rotation')  # maybe implement later
-        total_time = load_case['total_time']
-        num_increments = load_case['num_increments']
-        # freq = load_case.get('dump_frequency', 1)  # maybe implement later
+        # rot = load_part.get('rotation')  # maybe implement later
+        total_time = load_part['total_time']
+        num_increments = load_part['num_increments']
+        # freq = load_part.get('dump_frequency', 1)  # maybe implement later
 
         if vel_grad is None and stress is None:
             msg = ('Specify either `vel_grad`, `stress` or both.')
@@ -326,14 +277,14 @@ def write_vpsc_fileproc(path, load_case):
             if not isinstance(stress, np.ma.core.MaskedArray):
                 raise ValueError(msg.format('stress'))
 
-            if np.any(dg_arr.mask == stress.mask):
+            if np.any(vel_grad.mask == stress.mask):
                 msg = ('`vel_grad` must be component-wise exclusive with '
                        '`stress`')
                 raise ValueError(msg)
 
         time_increment = total_time / num_increments
-        
-        path_part = path.parent / f'part{i+1}.proc'
+
+        path_part = path.parent / f'part_{i+1}.proc'
         with path_part.open(mode='w') as f:
 
             f.write(f' {num_increments} 7 {time_increment} 298.\n')
