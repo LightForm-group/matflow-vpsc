@@ -85,8 +85,6 @@ def write_vpsc_in(path, control, phases, load_case, numerics):
         f.write(' '.join(str(x) for x in phase_fractions) + '\n')
 
         for name, phase in phases.items():
-
-
             f.write(f'# Info on phase `{name}`\n')
             f.write(f'{phase["grain_shape_control"]} '
                     f'{phase["fragmentation_control"]} '
@@ -298,3 +296,79 @@ def write_vpsc_fileproc(path, load_case):
             f.write(format_tensor33(stress_mask, sym=True))
             f.write('blank\n')
             f.write(format_tensor33(stress, fmt='.3e', sym=True))
+
+
+@output_mapper(
+    'orientations_response',
+    'simulate_orientations_loading',
+    'self_consistent'
+)
+def read_output_files(path):
+    volume_response = {}
+
+    # Read orientations output file
+    # num_phases = 1
+    # for phase in range(num_phases):
+    phase = 0
+    path_tex = path.parent / f'TEX_PH{phase+1}.OUT'
+
+    num_oris = None
+    all_strain = []
+    all_elps_axes = []
+    all_elps_ori = []
+    all_oris = []
+    with path_tex.open(mode='r') as f:
+        try:
+            while True:
+                strain = float(next(f).split()[-1])
+                # Skip last inc if it is repeated
+                if num_oris is not None and strain == all_strain[-1]:
+                    break
+                elps_axes = [float(x) for x in next(f).split()[:3]]
+                elps_ori = [float(x) for x in next(f).split()[:3]]
+                conv, num_oris_in = next(f).split()
+                num_oris_in = int(num_oris_in)
+
+                assert conv == 'B'
+                if num_oris is None:
+                    num_oris = num_oris_in
+                else:
+                    assert num_oris_in == num_oris
+
+                oris = np.loadtxt(f, max_rows=num_oris, usecols=[0, 1, 2])
+
+                all_strain.append(strain)
+                all_elps_axes.append(elps_axes)
+                all_elps_ori.append(elps_ori)
+                all_oris.append(oris)
+        except StopIteration:
+            pass
+
+    all_strain = np.array(all_strain)
+    all_elps_axes = np.array(all_elps_axes)
+    all_elps_ori = np.array(all_elps_ori)
+    all_oris = np.array(all_oris)
+
+    volume_response.update({
+        'O': {
+            'data': {
+                'type': 'euler',
+                'euler_angles': all_oris,
+                # TODO: check this!!
+                'unit_cell_alignment': {'x': 'a'},
+                'euler_degrees': True,
+            },
+            'meta': {
+                'increments': list(range(1, all_oris.shape[0] + 1)),
+            }
+        }
+    })
+
+    # Read average stress/strain output file
+    path_strstr = path.parent / 'STR_STR.OUT'
+    strstr_data = np.loadtxt(path_strstr, skiprows=1)
+
+    orientations_response = {
+        'volume_data': volume_response,
+    }
+    return orientations_response
