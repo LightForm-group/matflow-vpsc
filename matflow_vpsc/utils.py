@@ -100,6 +100,35 @@ def format_tensor33(tensor, fmt='', sym=False):
             if isinstance(x, np.ma.core.MaskedConstant):
                 x = 0
             str_out += f" {x:{fmt}}"
-        str_out += f"\n"
+        str_out += "\n"
 
     return str_out
+
+
+def vec6_to_tensor33sym(vec):
+    """[summary]
+
+    Parameters
+    ----------
+    vec : np.ndarray of shape (.., 6)
+        Order 11, 22, 33, 23, 13, 12
+
+    Returns
+    -------
+    np.ndarray of shape (.., 3, 3)
+
+    """
+    tens = np.zeros(vec.shape[:-1] + (3, 3), dtype=vec.dtype)
+
+    tens[..., 0, 0] = vec[..., 0]
+    tens[..., 1, 1] = vec[..., 1]
+    tens[..., 2, 2] = vec[..., 2]
+    tens[..., 1, 2] = vec[..., 3]
+    tens[..., 0, 2] = vec[..., 4]
+    tens[..., 0, 1] = vec[..., 5]
+
+    tens[..., 2, 1] = tens[..., 1, 2]
+    tens[..., 2, 0] = tens[..., 0, 2]
+    tens[..., 1, 0] = tens[..., 0, 1]
+
+    return tens
